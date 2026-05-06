@@ -18,7 +18,7 @@ from picamera2 import Picamera2
 # ----------------------------
 # GPS
 # ----------------------------
-PORT = "/dev/ttyACM0"
+PORT = "COM9"
 BAUD = 9600
 R_EARTH = 6371000.0
 
@@ -77,8 +77,8 @@ BOTTOM_CUT_FRAC = 0.88
 # ----------------------------
 USE_YELLOW = False
 
-WHITE_V_MIN = 200
-WHITE_S_MAX = 30
+WHITE_V_MIN = 115   # lower = detects dimmer white paint / darker camera image
+WHITE_S_MAX = 120   # higher = allows shadowed/off-white paint
 
 YELLOW_LOW = (12, 90, 120)
 YELLOW_HIGH = (45, 255, 255)
@@ -91,7 +91,7 @@ BLUR_K = 5
 # ----------------------------
 # Thin-edge extraction
 # ----------------------------
-GRAD_THRESH = 34
+GRAD_THRESH = 16    # lower = more sensitive thin-edge response
 
 CENTER_BLOCK_L = 0.43
 CENTER_BLOCK_R = 0.57
@@ -592,34 +592,10 @@ def morphology_open(img_u8, k=3):
 
 
 def make_main_roi_mask(shape_hw):
+    # Full-frame mask: no trapezoid ROI, no car rectangle, no center block.
+    # This lets the entire image be edge-detected.
     h, w = shape_hw
-    mask = np.zeros((h, w), dtype=np.uint8)
-
-    trap = np.array([[
-        (int(ROI["left_bottom"] * w), int(ROI["bottom_y"] * h)),
-        (int(ROI["left_top"] * w),    int(ROI["top_y"] * h)),
-        (int(ROI["right_top"] * w),   int(ROI["top_y"] * h)),
-        (int(ROI["right_bottom"] * w), int(ROI["bottom_y"] * h)),
-    ]], dtype=np.int32)
-    cv2.fillPoly(mask, trap, 255)
-
-    y_cut = int(BOTTOM_CUT_FRAC * h)
-    mask[y_cut:, :] = 0
-
-    if CAR_MASK["enabled"]:
-        car_poly = np.array([[
-            (int(CAR_MASK["left"] * w), h),
-            (int(CAR_MASK["left"] * w), int(CAR_MASK["top_y"] * h)),
-            (int(CAR_MASK["right"] * w), int(CAR_MASK["top_y"] * h)),
-            (int(CAR_MASK["right"] * w), h),
-        ]], dtype=np.int32)
-        cv2.fillPoly(mask, car_poly, 0)
-
-    c0 = int(CENTER_BLOCK_L * w)
-    c1 = int(CENTER_BLOCK_R * w)
-    mask[:, c0:c1] = 0
-
-    return mask
+    return np.full((h, w), 255, dtype=np.uint8)
 
 
 def build_paint_mask(frame_bgr, roi_mask):
@@ -695,12 +671,14 @@ def video_reader_thread():
 
         config0 = cam0.create_video_configuration(
             main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-            controls={"FrameRate": CAMERA_FPS}
+            controls={"FrameRate": CAMERA_FPS},
+            buffer_count=4
         )
 
         config1 = cam1.create_video_configuration(
             main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-            controls={"FrameRate": CAMERA_FPS}
+            controls={"FrameRate": CAMERA_FPS},
+            buffer_count=4
         )
 
         cam0.configure(config0)
@@ -708,6 +686,17 @@ def video_reader_thread():
 
         cam0.start()
         cam1.start()
+
+        # Same processing pipeline already runs on both cameras.
+        # These controls keep the camera capture behavior as consistent as Picamera2 allows.
+        common_controls = {
+            "FrameRate": CAMERA_FPS,
+        }
+        try:
+            cam0.set_controls(common_controls)
+            cam1.set_controls(common_controls)
+        except Exception:
+            pass
         time.sleep(2.0)
 
         video_fps = float(CAMERA_FPS)
