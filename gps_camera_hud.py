@@ -32,9 +32,10 @@ GPS_MAX_MATCH_DIST_M = 20.0
 GPS_LOOP_PROGRESS_SLACK_M = 6.0
 
 # ----------------------------
-# Live Camera
+# Live Cameras
 # ----------------------------
-CAMERA_NUM = 0
+CAMERA_NUM_0 = 0
+CAMERA_NUM_1 = 1
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_FPS = 30
@@ -684,37 +685,54 @@ def process_frame(frame_bgr):
 def video_reader_thread():
     global video_running, video_fps, video_width, video_height
 
-    cam = None
+    cam0 = None
+    cam1 = None
 
     try:
-        cam = Picamera2(camera_num=CAMERA_NUM)
+        # Create both cameras explicitly, same as your working Pi test code.
+        cam0 = Picamera2(camera_num=CAMERA_NUM_0)
+        cam1 = Picamera2(camera_num=CAMERA_NUM_1)
 
-        config = cam.create_video_configuration(
+        config0 = cam0.create_video_configuration(
             main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
             controls={"FrameRate": CAMERA_FPS}
         )
 
-        cam.configure(config)
-        cam.start()
+        config1 = cam1.create_video_configuration(
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+            controls={"FrameRate": CAMERA_FPS}
+        )
+
+        cam0.configure(config0)
+        cam1.configure(config1)
+
+        cam0.start()
+        cam1.start()
         time.sleep(2.0)
 
         video_fps = float(CAMERA_FPS)
-        video_width = int(CAMERA_WIDTH)
+
+        # Display/output frame is both cameras side-by-side.
+        video_width = int(CAMERA_WIDTH * 2)
         video_height = int(CAMERA_HEIGHT)
 
         frame_period = 1.0 / video_fps
         next_time = time.perf_counter()
 
         while video_running:
-            frame_rgb = cam.capture_array()
+            frame0_rgb = cam0.capture_array()
+            frame1_rgb = cam1.capture_array()
 
             # Picamera2 gives RGB888 here; the existing edge pipeline expects BGR.
-            frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            frame0 = cv2.cvtColor(frame0_rgb, cv2.COLOR_RGB2BGR)
+            frame1 = cv2.cvtColor(frame1_rgb, cv2.COLOR_RGB2BGR)
 
+            # Store the two camera frames together so edge detection can run
+            # on each camera separately, then display them together.
             with frame_lock:
                 if len(frame_queue) >= FRAME_BUFFER_SIZE:
                     frame_queue.popleft()
-                frame_queue.append(frame)
+                frame_queue.append((frame0, frame1))
 
             next_time += frame_period
             sleep_time = next_time - time.perf_counter()
@@ -729,9 +747,15 @@ def video_reader_thread():
             gps_status["status_text"] = f"Camera error: {e}"
 
     finally:
-        if cam is not None:
+        if cam0 is not None:
             try:
-                cam.stop()
+                cam0.stop()
+            except Exception:
+                pass
+
+        if cam1 is not None:
+            try:
+                cam1.stop()
             except Exception:
                 pass
 
@@ -751,7 +775,7 @@ def main():
     time.sleep(0.2)
 
     if video_width is None or video_height is None:
-        video_width, video_height = CAMERA_WIDTH, CAMERA_HEIGHT
+        video_width, video_height = CAMERA_WIDTH * 2, CAMERA_HEIGHT
 
     out = None
     if WRITE_OUTPUT:
@@ -782,17 +806,25 @@ def main():
 
     try:
         while True:
-            frame = None
+            frame_pair = None
 
             with frame_lock:
                 if frame_queue:
-                    frame = frame_queue.popleft()
+                    frame_pair = frame_queue.popleft()
 
-            if frame is not None:
-                edge_frame = process_frame(frame)
+            if frame_pair is not None:
+                frame0, frame1 = frame_pair
+
+                # Keep the original edge-detection method unchanged.
+                # Each camera is processed separately, then combined side-by-side.
+                edge0 = process_frame(frame0)
+                edge1 = process_frame(frame1)
+                edge_frame = np.hstack((edge0, edge1))
+
+                original_frame = np.hstack((frame0, frame1))
 
                 if SHOW_ORIGINAL_VIDEO:
-                    cv2.imshow("Original Video", frame)
+                    cv2.imshow("Original Video", original_frame)
 
                 if SHOW_EDGE_VIDEO:
                     cv2.imshow("Edge Detected Video", edge_frame)
