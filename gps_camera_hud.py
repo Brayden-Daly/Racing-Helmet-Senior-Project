@@ -18,7 +18,7 @@ from picamera2 import Picamera2
 # ----------------------------
 # GPS
 # ----------------------------
-PORT = "COM9"
+PORT = "/dev/ttyACM0"
 BAUD = 9600
 R_EARTH = 6371000.0
 
