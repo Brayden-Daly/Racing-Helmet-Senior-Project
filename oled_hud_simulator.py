@@ -20,7 +20,7 @@ from waveshare_OLED import OLED_1in51
 logging.basicConfig(level=logging.INFO)
 
 # Match the OLED HUD settings from the main file.
-OLED_ROTATE_180 = True
+OLED_ROTATE_180 = False
 OLED_DOT_BLINK_S = 0.5
 START_DIST_M = 100.0
 
@@ -33,29 +33,28 @@ CLEAR_SCREEN_S = 2.0
 
 def draw_oled_right_arrow(draw, cx, cy):
     """Same thick right arrow used by the main OLED HUD."""
-    draw.rectangle((cx - 40, cy - 6, cx + 15, cy + 6), fill=0)
+    draw.rectangle((cx - 5, cy - 3, cx + 15, cy + 3), fill=0)
     draw.polygon([
-        (cx + 15, cy - 22),
-        (cx + 45, cy),
-        (cx + 15, cy + 22),
+        (cx + 15, cy - 10),
+        (cx + 25, cy),
+        (cx + 15, cy + 10),
     ], fill=0)
 
 
 def draw_oled_left_arrow(draw, cx, cy):
     """Same thick left arrow used by the main OLED HUD."""
-    draw.rectangle((cx - 15, cy - 6, cx + 40, cy + 6), fill=0)
+    draw.rectangle((cx - 15, cy - 3, cx + 5, cy + 3), fill=0)
     draw.polygon([
-        (cx - 15, cy - 22),
-        (cx - 45, cy),
-        (cx - 15, cy + 22),
+        (cx - 15, cy - 10),
+        (cx - 25, cy),
+        (cx - 15, cy + 10),
     ], fill=0)
 
 
-def draw_oled_blink_dot(draw, width, dot_on):
-    """Same blinking top-right dot used by the main OLED HUD."""
+def draw_oled_blink_dot(draw, width, height, dot_on):
+    """Same blinking bottom-right dot used by the main OLED HUD."""
     if dot_on:
-        draw.ellipse((width - 18, 4, width - 4, 18), fill=0)
-
+        draw.ellipse((width - 5, height - 5, width - 2, height - 2), fill=0)
 
 class OLEDHUDSimulator:
     def __init__(self):
@@ -98,13 +97,13 @@ class OLEDHUDSimulator:
         draw = ImageDraw.Draw(image)
 
         if direction == "LEFT":
-            draw_oled_left_arrow(draw, self.cx, self.cy - 10)
+            draw_oled_left_arrow(draw, self.cx-35, self.cy -10)
         else:
-            draw_oled_right_arrow(draw, self.cx, self.cy - 10)
+            draw_oled_right_arrow(draw, self.cx+35, self.cy -10)
 
-        self._text_center(draw, f"TURN {direction}", 2)
+        #self._text_center(draw, f"TURN {direction}", 2)
         self._text_center(draw, f"{max(distance_m, 0):.0f} m", self.height - 18)
-        draw_oled_blink_dot(draw, self.width, self.dot_on)
+        draw_oled_blink_dot(draw, self.width, self.height, self.dot_on)
 
         if OLED_ROTATE_180:
             image = image.rotate(180)
@@ -118,9 +117,9 @@ class OLEDHUDSimulator:
         image = Image.new("1", (self.width, self.height), "WHITE")
         draw = ImageDraw.Draw(image)
 
-        self._text_center(draw, "TRACK CLEAR", self.cy - 8)
-        self._text_center(draw, "Sim HUD only", self.height - 18)
-        draw_oled_blink_dot(draw, self.width, self.dot_on)
+        self._text_center(draw, "NO TURN", self.height-18 )
+        #self._text_center(draw, "Sim HUD only", self.height - 18)
+        draw_oled_blink_dot(draw, self.width, self.height, self.dot_on)
 
         if OLED_ROTATE_180:
             image = image.rotate(180)
@@ -155,9 +154,13 @@ def main():
     try:
         while True:
             run_countdown(hud, "LEFT")
+            
             run_clear(hud)
             run_countdown(hud, "RIGHT")
+            
             run_clear(hud)
+
+            
     except KeyboardInterrupt:
         logging.info("ctrl + c")
     finally:
